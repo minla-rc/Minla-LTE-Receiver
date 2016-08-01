@@ -1,0 +1,835 @@
+
+<!--	
+		=============================================================
+		Author: Gennady Shmakov <gshmakov@gmail.com>
+		Copyright (c) 2016 Minla RC. All rights reserved.
+		
+		This file is a part of Minla RC LTE FPV receiver project.
+		=============================================================
+-->
+
+<!-- 
+		Contol panel for Minla receiver board
+		Works together with server_cp_v0.07.js server script		
+-->
+
+<!DOCTYPE html>
+
+<html>
+	<head>
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="mobile-web-app-capable" content="yes">
+		<meta name="viewport" content="width=device-width, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+		<script src="https://api-maps.yandex.ru/2.1/?lang=en_US" type="text/javascript"></script>
+		<script>document.ontouchmove=function(e){e.preventDefault();}</script>
+		
+		<style>.sPadTXT{position:absolute; width:20px; height:10px; z-index:1; font-family:sans-serif; font-size:10px; text-align:left;}</style>
+		<style>.sMenuTXT{position:absolute; font-family:sans-serif; font-size:10px; text-align:center; color:green;}</style>
+		<style>.sTelemetryTXT{position:absolute; width:70px; height:10px; z-index:11; font-family:sans-serif; font-size:10px; font-weight:bold; text-align:left; color:red;}</style>
+	</head>
+	
+	<body style="background-color:#ededed">
+
+		<script>
+			var WINDOW_WIDTH=window.innerWidth;var WINDOW_HEIGHT=window.innerHeight;
+		</script>
+	
+		<canvas id="CameraCanvas" style="z-index:0; position:absolute; top:0px; background-color:grey;">No HTML5</canvas> <!-- #7ab995 -->
+		
+		<div id="mapDiv" style="display:inline; position:absolute; right:0px; top:0px; z-index:1; background-color:orange; opacity:0.5;"></div>
+		<script>
+			if (WINDOW_WIDTH>=1024) {
+				document.getElementById("mapDiv").style.width=(Math.floor(WINDOW_WIDTH/2)-180).toString()+"px";
+				document.getElementById("mapDiv").style.opacity="1";
+			} else {
+				document.getElementById("mapDiv").style.width=(Math.floor(WINDOW_WIDTH/2)-70).toString()+"px";
+			}
+			document.getElementById("mapDiv").style.height=Math.floor(WINDOW_HEIGHT/2.4).toString()+"px";
+		</script>
+		
+		<canvas id="CtrlPadLeft" style="position:absolute; z-index:2; bottom:5px; left:5px;">No HTML5</canvas>
+		<div id="CtrlPadLeft_currentPitchTXT" class="sPadTXT" style="bottom:5px; color:green;"></div>
+		<div id="CtrlPadLeft_qcPitchTXT" class="sPadTXT" style="bottom:15px; color:red;">500</div>
+		<div id="CtrlPadLeft_currentRollTXT" class="sPadTXT" style="color:green;"></div>
+		<div id="CtrlPadLeft_qcRollTXT" class="sPadTXT" style="color:red;">500</div>
+		
+		<canvas id="CtrlPadRight" style="position:absolute; z-index:2; bottom:5px; right:5px;">No HTML5</canvas>
+		<div id="CtrlPadRight_currentThrottleTXT" class="sPadTXT" style="bottom:5px; color:green;"></div>
+		<div id="CtrlPadRight_qcThrottleTXT" class="sPadTXT" style="bottom:15px; color:red;">500</div>
+		<div id="CtrlPadRight_currentYawTXT" class="sPadTXT" style="color:green;"></div>
+		<div id="CtrlPadRight_qcYawTXT" class="sPadTXT" style="color:red;">500</div>
+		
+		<!-- ============= Image buttons ==================== -->
+		<img src="img/bw/onoff.png" id="bConn" width="30" height="30" style="z-index:2; position:absolute; top:5px; left:5px; background-color:silver;" onclick="UDPSockToggle()">
+		
+		<img src="img/bw/menu.png" id="bMenuShowHide" width="30" height="30" style="z-index:2; position:absolute; top:45px; left:5px; background-color:silver;" onclick="menuShowHide()">
+		<script>
+			function menuShowHide() {
+				if (document.getElementById("MenuBlock").style.display=="none") {
+					document.getElementById("MenuBlock").style.display="inline";
+					document.getElementById("bMenuShowHide").style.backgroundColor="lime";
+				} else {
+					document.getElementById("MenuBlock").style.display="none";
+					document.getElementById("bMenuShowHide").style.backgroundColor="silver";
+				}
+			}
+		</script>
+		
+		<img src="img/bw/slow.png" id="bSlow" width="30" height="30" style="z-index:2; position:absolute; top:85px; left:5px; background-color:silver;" onclick="toggleSlow()">
+		<script>
+			function toggleSlow() {
+				if (document.getElementById("bSlow").style.backgroundColor=="silver") {
+					document.getElementById("bSlow").style.backgroundColor="lime";
+					SetRangePitchRoll=RANGE_PITCH_ROLL_50;
+					statusTXT.innerHTML+="SLOW CONTROLS"+"<br>";
+				} else {
+					document.getElementById("bSlow").style.backgroundColor="silver";
+					SetRangePitchRoll=RANGE_PITCH_ROLL_80;
+					statusTXT.innerHTML+="FAST CONTROLS"+"<br>";
+				}
+			}
+		</script>
+		
+		<img src="img/bw/motor.png" id="bMotRun" width="30" height="30" style="z-index:2; position:absolute; top:5px; right:5px; background-color:#56A5EC;" onclick="API_Request(5,0)">
+		
+		<img src="img/bw/map.png" id="bMapShowHide" width="30" height="30" style="z-index:2; position:absolute; top:85px; right:5px; background-color:lime;" onclick="mapShowHide()">
+		<script>
+			function mapShowHide() {
+				if (document.getElementById("mapDiv").style.display=="none") {
+					document.getElementById("mapDiv").style.display="inline";
+					document.getElementById("bMapShowHide").style.backgroundColor="lime";
+				} else {
+					document.getElementById("mapDiv").style.display="none";
+					document.getElementById("bMapShowHide").style.backgroundColor="silver";
+				}
+			}
+		</script>
+		<!-- ============= Image buttons END ================ -->
+		
+		<div id="jpegTXT" style="top:0px; left:50px; width:100px; height:10px; position:absolute; z-index:1; font-family:sans-serif; font-size:10px; text-align:left; color:red;"></div>
+		<div id="statusTXT" style="top:15px; height:40px; left:50px; width:180px; position:absolute; z-index:1; font-family:sans-serif; font-size:10px; text-align:left; color:green;"></div>
+		
+		<!-- ============= Telemetry data =================== -->
+		<img src="img/bw/battery.png" id="iBattery" width="30" height="20" style="z-index:11; position:absolute; bottom:5px; background-color:grey;">
+		<div id="txtBattery" class="sTelemetryTXT" style="bottom:10px;">0 v</div>
+		<script>
+			document.getElementById("iBattery").style.left=(Math.floor(WINDOW_WIDTH/2)-75).toString()+"px";
+			document.getElementById("txtBattery").style.left=(Math.floor(WINDOW_WIDTH/2)-40).toString()+"px";
+		</script>
+		
+		<img src="img/bw/satellite.png" id="iGpsFix" width="30" height="20" style="z-index:11; position:absolute; bottom:30px; background-color:red;">
+		<div id="txtGpsSvNum" class="sTelemetryTXT" style="bottom:35px;">0</div>
+		<script>
+			document.getElementById("iGpsFix").style.left=(Math.floor(WINDOW_WIDTH/2)-75).toString()+"px";
+			document.getElementById("txtGpsSvNum").style.left=(Math.floor(WINDOW_WIDTH/2)-40).toString()+"px";
+		</script>
+		
+		<img src="img/bw/height.png" id="iGpsHeight" width="30" height="20" style="z-index:11; position:absolute; bottom:5px;">
+		<div id="txtGpsAlt" class="sTelemetryTXT" style="bottom:10px;">0 m</div>
+		<script>
+			document.getElementById("iGpsHeight").style.left=(Math.floor(WINDOW_WIDTH/2)+10).toString()+"px";
+			document.getElementById("txtGpsAlt").style.left=(Math.floor(WINDOW_WIDTH/2)+45).toString()+"px";
+		</script>
+		
+		<img src="img/bw/speed.png" id="iGpsSpeed" width="30" height="20" style="z-index:11; position:absolute; bottom:30px;">
+		<div id="txtGpsSpeed" class="sTelemetryTXT" style="bottom:35px;">0 km/h</div>
+		<script>
+			document.getElementById("iGpsSpeed").style.left=(Math.floor(WINDOW_WIDTH/2)+10).toString()+"px";
+			document.getElementById("txtGpsSpeed").style.left=(Math.floor(WINDOW_WIDTH/2)+45).toString()+"px";
+		</script>
+		
+		<img src="img/bw/distance.png" id="iGpsDistance" width="30" height="20" style="z-index:11; position:absolute; bottom:55px;">
+		<div id="txtGpsDistance" class="sTelemetryTXT" style="bottom:60px;">0 m</div>
+		<script>
+			document.getElementById("iGpsDistance").style.left=(Math.floor(WINDOW_WIDTH/2)+10).toString()+"px";
+			document.getElementById("txtGpsDistance").style.left=(Math.floor(WINDOW_WIDTH/2)+45).toString()+"px";
+		</script>
+		<!-- ============= Telemetry data END =============== -->
+		
+		<!-- ============= HIDDEN MENU container =============== -->
+		<div id="MenuBlock" style="top:30px; left:40px; width:300px; height:165px; display:none; background-color:orange; position:absolute; z-index:3; font-family:sans-serif; font-size:10px; text-align:left; color:green;">
+			
+			<div class="sMenuTXT" style="top:5px; left:5px; width:80px;">JPEG resolution</div>
+			<select id="CamFrRes" class="sMenuTXT" style="top:20px; left:5px; width:80px;" onchange="API_Request(8,this.value)">
+				<option value="160">160x120</option>
+				<option value="320" selected>320x240</option>
+				<option value="352">352x288</option>
+			</select>
+			
+			<div class="sMenuTXT" style="top:5px; left:105px; width:80px;">JPEG quality</div>
+			<select id="CamFrQuality" class="sMenuTXT" style="top:20px; left:105px; width:80px;" onchange="API_Request(9,this.value)">
+				<option value="10">Good</option>
+				<option value="20" selected>Average</option>
+				<option value="30">Poor</option>
+			</select>
+			
+			<div class="sMenuTXT" style="top:5px; left:205px; width:80px;">JPEG zoom</div>
+			<select id="CamZoom" class="sMenuTXT" style="top:20px; left:205px; width:80px;" onchange="cameraZoom(this.value)">
+				<option value="1" selected>1x</option>
+				<option value="1.5">1.5x</option>
+				<option value="10">Fit height</option>
+				<option value="11">Fullscreen</option>
+			</select>
+			
+			<button type="button" class="sMenuTXT" style="top:60px; left:5px; width:80px;" onclick="API_Request(4,0)">CH_CAL</button>
+			<button type="button" class="sMenuTXT" style="top:60px; left:105px; width:80px;" onclick="API_Request(6,0)">MAG_CAL</button>
+			<button type="button" class="sMenuTXT" style="top:100px; left:5px; width:80px;" onclick="API_Request(3,1)">GPS</button>
+			<button type="button" class="sMenuTXT" style="top:100px; left:105px; width:80px;" onclick="API_Request(3,2)">ATTI</button>
+			<button type="button" class="sMenuTXT" style="top:100px; left:205px; width:80px;" onclick="API_Request(3,3)">FAILSAFE</button>
+			<button type="button" class="sMenuTXT" style="top:140px; left:5px; width:80px;" onclick="API_Request(7,1)">VIDEO ON</button>
+			<button type="button" class="sMenuTXT" style="top:140px; left:105px; width:80px;" onclick="API_Request(7,2)">VIDEO OFF</button>
+		</div>
+		<!-- ============= HIDDEN MENU container END =========== -->
+		
+	</body>
+</html> 
+
+
+<!-- ================= Yandex maps scripting ===================== -->
+<script> 
+	var myMap;
+	var myPolyline;
+	var myPosition;
+	var myHome;
+	var myHomeLine;
+
+	ymaps.ready(init);
+
+	function init () {
+		myMap=new ymaps.Map('mapDiv', {center:[55.863652,37.116814],zoom:16,type:'yandex#hybrid',controls:[]},{fullscreenZIndex:10,suppressMapOpenBlock:true,suppressObsoleteBrowserNotifier:true});
+		B_FixHome=new ymaps.control.Button({data:{content:"H",title:"FixHome"},options:{float:"left",floatIndex:0,selectOnClick:false}});
+		B_FixHome.events.add('click',mapFixHome);
+		
+		var fullScreenControl=new ymaps.control.FullscreenControl();
+		myMap.controls.add(fullScreenControl, {float:'none',position:{right:50,top:5}});
+		fullScreenControl.events.add('fullscreenenter', function() {myMap.controls.add('typeSelector',{float:'left'}); myMap.controls.add('zoomControl'); myMap.controls.add(B_FixHome);});
+		fullScreenControl.events.add('fullscreenexit', function() {myMap.controls.remove('typeSelector'); myMap.controls.remove('zoomControl'); myMap.controls.remove(B_FixHome);});
+		
+		updatePlacemark(55.863652,37.116814);
+	}
+	
+	function mapFixHome() {
+		if (myHome!=null) {myMap.geoObjects.remove(myHome);}
+		if (myHomeLine!=null) {myMap.geoObjects.remove(myHomeLine);}
+	
+		myHome=new ymaps.Placemark(myMap.getCenter(),{},{preset:"islands#circleDotIcon",iconColor:'#00ff00'});
+		myMap.geoObjects.add(myHome);
+	
+		myHomeLine=new ymaps.Polyline([myHome.geometry.getCoordinates(),myPosition.geometry.getCoordinates()], {}, {strokeColor:"#00ff0099",strokeWidth:4,});
+		myMap.geoObjects.add(myHomeLine);
+	
+		document.getElementById("txtGpsDistance").innerHTML=ymaps.coordSystem.geo.getDistance(myHome.geometry.getCoordinates(),myPosition.geometry.getCoordinates()).toFixed(0)+" m";
+	}
+
+	function updatePlacemark(xLat,xLon) {
+		if (myPosition!=null) {myMap.geoObjects.remove(myPosition);}
+		if (myHomeLine!=null) {myMap.geoObjects.remove(myHomeLine);}
+	
+		myPosition=new ymaps.Placemark([xLat,xLon],{},{preset:"islands#circleDotIcon",iconColor:'#ff0000'});
+		myMap.geoObjects.add(myPosition);
+		myMap.setCenter([xLat,xLon]);
+	
+		if (myHome!=null) {
+			myHomeLine=new ymaps.Polyline([myHome.geometry.getCoordinates(),myPosition.geometry.getCoordinates()], {}, {strokeColor:"#00ff0099",strokeWidth:4});
+			myMap.geoObjects.add(myHomeLine);
+	
+			document.getElementById("txtGpsDistance").innerHTML=ymaps.coordSystem.geo.getDistance(myHome.geometry.getCoordinates(),myPosition.geometry.getCoordinates()).toFixed(0)+" m";
+		}
+	}
+	
+</script>
+<!-- ================= Yandex maps scripting END ================= -->
+
+
+
+<script>
+	
+	//============= INITIAL INTERFACE CONSTANTS =====================
+	var CTRL_PAD_SIZE_PCT_XS=0.55; //Control pads size fraction relative to window height if small screen is used
+	var CTRL_PAD_SIZE_PCT_XL=0.45; //Control pads size fraction relative to window height if large screen is used
+	
+	var LiPO3S_yellow=11.2; var LiPO3S_red=10.5; //LiPo 3S voltage levels colors
+	var LiPO4S_yellow=14.9; var LiPO4S_red=14; //LiPo 4S voltage levels colors
+	//============= INITIAL INTERFACE CONSTANTS END =================
+	
+	//============= CONTROL VARIABLES =====================
+	var MID_CTRLS_POS=500;
+	
+	var SetPitch=500, SetRoll=500, SetThrottle=500, SetYaw=500;
+	var CurrentPitch=500, CurrentRoll=500, CurrentThrottle=500, CurrentYaw=500;
+	var QC_Pitch=500, QC_Roll=500, QC_Throttle=500, QC_Yaw=500;
+	
+	var RANGE_PITCH_ROLL_50=0.50, RANGE_PITCH_ROLL_80=0.80;
+	var SetRangePitchRoll=RANGE_PITCH_ROLL_80; //fraction of full range 500 +/-500
+	var SetRangeThrottle=0.38; //fraction of full range 500 +/-500
+	var SetRangeYaw=0.3; //fraction of full range 500 +/-500
+	//============= CONTROL VARIABLES END =================
+	
+	//============= APPLICATION VARIABLES =================
+	var JPEGbuf=new Blob();
+	var WS=null;
+	var user_id=getQueryVariable("id");
+	var jpegFrN=0; jpegFrS=0; //Number and size of jpeg frames
+	var incomingHeartBeat=0;
+	
+	var GPS_AltCompensation=-100;
+	//============= APPLICATION VARIABLES END =============
+	
+	//============= INTERFACE INIT ==================
+	if (WINDOW_HEIGHT<720) {
+		var CTRL_PAD_SIZE_ABS=Math.floor(WINDOW_HEIGHT*CTRL_PAD_SIZE_PCT_XS);
+	} else {
+		var CTRL_PAD_SIZE_ABS=Math.floor(WINDOW_HEIGHT*CTRL_PAD_SIZE_PCT_XL);
+	}
+	
+	var zoom_value=getQueryVariable("cz");
+	if (zoom_value==false) {zoom_value=document.getElementById("CamZoom").value;}
+	
+	//Camera canvas
+	var CamCanvas=document.getElementById("CameraCanvas");
+	cameraZoom(zoom_value);
+	CamCanvas.addEventListener('touchstart',Cam_onTouch,false);
+	CamCanvas.addEventListener('touchmove',Cam_onTouch,false);
+	//==
+	
+	//Related to left control canvas
+	var CtrlPadLeft=document.getElementById("CtrlPadLeft");	//Pitch and Roll. Automove to center
+	CtrlPadLeft.width=CTRL_PAD_SIZE_ABS;
+	CtrlPadLeft.height=CTRL_PAD_SIZE_ABS;
+	var CtrlPadLeft_ctx=CtrlPadLeft.getContext("2d");
+	var CtrlPadLeftRect=CtrlPadLeft.getBoundingClientRect();
+	var CtrlPadLeft_HCenter=CtrlPadLeft.width/2;
+	var CtrlPadLeft_VCenter=CtrlPadLeft.height/2;
+	CtrlPadLeft.addEventListener('touchstart',CtrlPadLeft_onTouch,false);
+	CtrlPadLeft.addEventListener('touchmove',CtrlPadLeft_onTouch,false);
+	CtrlPadLeft.addEventListener('touchend',CtrlPadLeft_onTouchEnd,false);
+	
+	var CtrlPadLeft_currentPitchTXT=document.getElementById("CtrlPadLeft_currentPitchTXT");
+	CtrlPadLeft_currentPitchTXT.style.left=(Math.floor(CtrlPadLeft.width/2)+10).toString()+"px";
+	var CtrlPadLeft_qcPitchTXT=document.getElementById("CtrlPadLeft_qcPitchTXT");
+	CtrlPadLeft_qcPitchTXT.style.left=CtrlPadLeft_currentPitchTXT.style.left;
+	
+	var CtrlPadLeft_currentRollTXT=document.getElementById("CtrlPadLeft_currentRollTXT");
+	CtrlPadLeft_currentRollTXT.style.bottom=(Math.floor(CtrlPadLeft.height/2)+5).toString()+"px";
+	CtrlPadLeft_currentRollTXT.style.left=(CtrlPadLeft.width+10).toString()+"px";
+	var CtrlPadLeft_qcRollTXT=document.getElementById("CtrlPadLeft_qcRollTXT");
+	CtrlPadLeft_qcRollTXT.style.bottom=(Math.floor(CtrlPadLeft.height/2)+15).toString()+"px";
+	CtrlPadLeft_qcRollTXT.style.left=CtrlPadLeft_currentRollTXT.style.left;
+	//===
+	
+	//Related to right control canvas
+	var CtrlPadRight=document.getElementById("CtrlPadRight");	//Throttle and Yaw. Automove to center
+	CtrlPadRight.width=CTRL_PAD_SIZE_ABS;
+	CtrlPadRight.height=CTRL_PAD_SIZE_ABS;
+	var CtrlPadRight_ctx=CtrlPadRight.getContext("2d");
+	var CtrlPadRightRect=CtrlPadRight.getBoundingClientRect();
+	var CtrlPadRight_HCenter=CtrlPadRight.width/2;
+	var CtrlPadRight_VCenter=CtrlPadRight.height/2;
+	CtrlPadRight.addEventListener('touchstart',CtrlPadRight_onTouch,false);
+	CtrlPadRight.addEventListener('touchmove',CtrlPadRight_onTouch,false);
+	CtrlPadRight.addEventListener('touchend',CtrlPadRight_onTouchEnd,false);
+	
+	var CtrlPadRight_currentThrottleTXT=document.getElementById("CtrlPadRight_currentThrottleTXT");
+	CtrlPadRight_currentThrottleTXT.style.right=(Math.floor(CtrlPadRight.width/2)+10).toString()+"px";
+	var CtrlPadRight_qcThrottleTXT=document.getElementById("CtrlPadRight_qcThrottleTXT");
+	CtrlPadRight_qcThrottleTXT.style.right=CtrlPadRight_currentThrottleTXT.style.right;
+	
+	var CtrlPadRight_currentYawTXT=document.getElementById("CtrlPadRight_currentYawTXT");
+	CtrlPadRight_currentYawTXT.style.bottom=(Math.floor(CtrlPadRight.height/2)+5).toString()+"px";
+	CtrlPadRight_currentYawTXT.style.right=(CtrlPadRight.width+5).toString()+"px";
+	var CtrlPadRight_qcYawTXT=document.getElementById("CtrlPadRight_qcYawTXT");
+	CtrlPadRight_qcYawTXT.style.bottom=(Math.floor(CtrlPadRight.height/2)+15).toString()+"px";
+	CtrlPadRight_qcYawTXT.style.right=CtrlPadRight_currentYawTXT.style.right;
+	//===
+	
+	//Buttons/TextFields
+	var statusTXT=document.getElementById("statusTXT");
+	var bConn=document.getElementById("bConn");
+	var jpegTXT=document.getElementById("jpegTXT");
+	//===
+	
+	
+	CtrlPadLeft_UpdateCanvas();
+	CtrlPadRight_UpdateCanvas();
+	
+	//============= INTERFACE INIT END ==============
+	
+	
+	//===================== TIMERS ========================
+	setInterval(function() { //Delay in ms how often [pitch,roll,throttle,yaw] control signals will be sent to device
+		if ((SetPitch!=CurrentPitch)||(SetRoll!=CurrentRoll)||(SetThrottle!=CurrentThrottle)||(SetYaw!=CurrentYaw)) {
+		
+			CtrlPadLeft_currentPitchTXT.innerHTML=CurrentPitch;
+			CtrlPadLeft_currentRollTXT.innerHTML=CurrentRoll;
+			CtrlPadRight_currentThrottleTXT.innerHTML=CurrentThrottle;
+			CtrlPadRight_currentYawTXT.innerHTML=CurrentYaw;
+		
+			SetPitch=CurrentPitch;
+			SetRoll=CurrentRoll;
+			SetThrottle=CurrentThrottle;
+			SetYaw=CurrentYaw;
+			
+			API_Request(1,0);		
+		} else {
+			API_Request(2,0); //send heartbeat signal to minla device
+		}
+	},50); //Every 0.25 seconds
+	
+	setInterval(function() { //Clear statusTXT field line by line
+		statusTXT.innerHTML=statusTXT.innerHTML.slice(statusTXT.innerHTML.indexOf("<br>")+4);
+	},6000); //Every 6 seconds
+	
+	setInterval(function() { //FPS calculation and mean frame size
+		if (jpegFrN!=0) {
+			jpegTXT.innerHTML="fps/size:"+jpegFrN+"/"+Math.round(jpegFrS/jpegFrN);
+		} else {
+			jpegTXT.innerHTML="Camera..OFF";
+		}
+		
+		jpegFrN=0;
+		jpegFrS=0;
+	},1000); //Every 1 second
+	
+	setInterval(function() { //check if heartbeat has been received from MINLA receiver board
+		if ((bConn.style.backgroundColor=="lime")&&(incomingHeartBeat==0)) {
+			bConn.style.backgroundColor="yellow";
+		} else {
+			incomingHeartBeat=0;
+		}
+	},5000); //Every 5 second
+	//===================== TIMERS END ====================
+	
+	
+	// ========================= TOUCH CONTROL EVENTS ==========================
+	//============================ CAMERA CANVAS ============================
+	function Cam_onTouch(e) {
+		e.preventDefault();
+		if ((e.targetTouches.length==1)&&(WINDOW_WIDTH>=1024)&&(zoom_value<10)) {	
+			CamCanvas.style.top=(e.targetTouches[0].pageY-(CamCanvas.height/2)).toString()+"px";
+			CamCanvas.style.left=(e.targetTouches[0].pageX-(CamCanvas.width/2)).toString()+"px";
+		}
+	}
+	
+	function cameraZoom(val) {
+	
+		zoom_value=val;
+		
+		switch (val) {
+			case "1":
+			case "1.5":
+				CamCanvas.width=Math.round(zoom_value*document.getElementById("CamFrRes").value);
+				if (document.getElementById("CamFrRes").value==352) {
+					CamCanvas.height=Math.round(CamCanvas.width*18/22);
+				} else {
+					CamCanvas.height=Math.round(CamCanvas.width*3/4);
+				}
+				if (CamCanvas.height>WINDOW_HEIGHT) {
+					document.getElementById("CamZoom").value="10";
+					cameraZoom("10");
+					return;
+				}
+				CamCanvas.style.left=Math.round((WINDOW_WIDTH-CamCanvas.width)/2).toString()+"px";
+			break;
+			
+			case "10": //Fit height
+				CamCanvas.style.top="0px";
+				CamCanvas.height=WINDOW_HEIGHT;
+				if (document.getElementById("CamFrRes").value==352) {
+					CamCanvas.width=Math.round(CamCanvas.height*22/18);
+				} else {
+					CamCanvas.width=Math.round(CamCanvas.height*4/3);
+				}
+				CamCanvas.style.left=Math.round((WINDOW_WIDTH-CamCanvas.width)/2).toString()+"px";
+			break;
+			
+			case "11": //Fullscreen
+				CamCanvas.style.top="0px";
+				CamCanvas.width=WINDOW_WIDTH;
+				CamCanvas.height=WINDOW_HEIGHT;
+				CamCanvas.style.left="0px";
+			break;
+		
+		}
+		CamCanvas.getContext("2d").translate(CamCanvas.width,CamCanvas.height);
+		CamCanvas.getContext("2d").rotate(180*Math.PI/180);
+		
+	}
+
+	//============================ LEFT PAD =================================
+	function CtrlPadLeft_UpdateCanvas() {
+	
+		var H=CtrlPadLeft_HCenter+Math.round(((CurrentRoll-MID_CTRLS_POS)/(SetRangePitchRoll*MID_CTRLS_POS))*CtrlPadLeft_HCenter);
+		var V=CtrlPadLeft_VCenter+Math.round(((MID_CTRLS_POS-CurrentPitch)/(SetRangePitchRoll*MID_CTRLS_POS))*CtrlPadLeft_VCenter);
+		var QC_H=CtrlPadLeft_HCenter+Math.round(((QC_Roll-MID_CTRLS_POS)/(SetRangePitchRoll*MID_CTRLS_POS))*CtrlPadLeft_HCenter);
+		var QC_V=CtrlPadLeft_VCenter+Math.round(((MID_CTRLS_POS-QC_Pitch)/(SetRangePitchRoll*MID_CTRLS_POS))*CtrlPadLeft_VCenter);
+
+		CtrlPadLeft_ctx.clearRect(0,0,CtrlPadLeft.width,CtrlPadLeft.height);
+	
+		CtrlPadLeft_ctx.beginPath();
+		CtrlPadLeft_ctx.lineWidth="1";
+		CtrlPadLeft_ctx.strokeStyle="black";
+		CtrlPadLeft_ctx.moveTo(0,CtrlPadLeft_VCenter);
+		CtrlPadLeft_ctx.lineTo(CtrlPadLeft.width,CtrlPadLeft_VCenter);
+		CtrlPadLeft_ctx.moveTo(CtrlPadLeft_HCenter,0);
+		CtrlPadLeft_ctx.lineTo(CtrlPadLeft_HCenter,CtrlPadLeft.height);
+		CtrlPadLeft_ctx.stroke();
+	
+		CtrlPadLeft_ctx.beginPath();
+		CtrlPadLeft_ctx.lineWidth="3";
+		CtrlPadLeft_ctx.strokeStyle="green";
+		CtrlPadLeft_ctx.moveTo(CtrlPadLeft_HCenter,CtrlPadLeft_VCenter);
+		CtrlPadLeft_ctx.lineTo(H,V);
+		CtrlPadLeft_ctx.stroke();
+		CtrlPadLeft_ctx.beginPath();
+		CtrlPadLeft_ctx.arc(H,V,20,0,2*Math.PI);
+		CtrlPadLeft_ctx.stroke();
+	
+		CtrlPadLeft_ctx.beginPath();
+		CtrlPadLeft_ctx.strokeStyle="red";
+		CtrlPadLeft_ctx.arc(QC_H,QC_V,20,0,2*Math.PI);
+		CtrlPadLeft_ctx.stroke();
+	}
+	function CtrlPadLeft_onTouch(e) {
+		e.preventDefault();
+		var touch=e.targetTouches[0];
+		var SetHoriz=touch.pageX-CtrlPadLeftRect.left;
+		var SetVert=touch.pageY-CtrlPadLeftRect.top;
+	
+		if (SetHoriz>CTRL_PAD_SIZE_ABS) {SetHoriz=CTRL_PAD_SIZE_ABS;} else if (SetHoriz<0) {SetHoriz=0;}
+		if (SetVert>CTRL_PAD_SIZE_ABS) {SetVert=CTRL_PAD_SIZE_ABS;} else if (SetVert<0) {SetVert=0;}
+	
+		CurrentPitch=Math.round(((CtrlPadLeft_VCenter-SetVert)/(CTRL_PAD_SIZE_ABS/2))*MID_CTRLS_POS*SetRangePitchRoll)+MID_CTRLS_POS;
+		CurrentRoll=Math.round(((SetHoriz-CtrlPadLeft_HCenter)/(CTRL_PAD_SIZE_ABS/2))*MID_CTRLS_POS*SetRangePitchRoll)+MID_CTRLS_POS;
+	
+		CtrlPadLeft_UpdateCanvas();
+	}
+	function CtrlPadLeft_onTouchEnd(e) {
+		e.preventDefault();
+	
+		CurrentPitch=MID_CTRLS_POS;
+		CurrentRoll=MID_CTRLS_POS;
+	
+		CtrlPadLeft_UpdateCanvas();
+	}
+	
+	//============================ RIGHT PAD =================================
+	function CtrlPadRight_UpdateCanvas() {
+	
+		var H=CtrlPadRight_HCenter+Math.round(((CurrentYaw-MID_CTRLS_POS)/(SetRangeYaw*MID_CTRLS_POS))*CtrlPadRight_HCenter);
+		var V=CtrlPadRight_VCenter+Math.round(((MID_CTRLS_POS-CurrentThrottle)/(SetRangeThrottle*MID_CTRLS_POS))*CtrlPadRight_VCenter);
+		var QC_H=CtrlPadRight_HCenter+Math.round(((QC_Yaw-MID_CTRLS_POS)/(SetRangeYaw*MID_CTRLS_POS))*CtrlPadRight_HCenter);
+		var QC_V=CtrlPadRight_VCenter+Math.round(((MID_CTRLS_POS-QC_Throttle)/(SetRangeThrottle*MID_CTRLS_POS))*CtrlPadRight_VCenter);
+
+		CtrlPadRight_ctx.clearRect(0,0,CtrlPadRight.width,CtrlPadRight.height);
+	
+		CtrlPadRight_ctx.beginPath();
+		CtrlPadRight_ctx.lineWidth="1";
+		CtrlPadRight_ctx.strokeStyle="black";
+		CtrlPadRight_ctx.moveTo(0,CtrlPadRight_VCenter);
+		CtrlPadRight_ctx.lineTo(CtrlPadRight.width,CtrlPadRight_VCenter);
+		CtrlPadRight_ctx.moveTo(CtrlPadRight_HCenter,0);
+		CtrlPadRight_ctx.lineTo(CtrlPadRight_HCenter,CtrlPadRight.height);
+		CtrlPadRight_ctx.stroke();
+	
+		CtrlPadRight_ctx.beginPath();
+		CtrlPadRight_ctx.lineWidth="3";
+		CtrlPadRight_ctx.strokeStyle="green";
+		CtrlPadRight_ctx.moveTo(CtrlPadRight_HCenter,CtrlPadRight_VCenter);
+		CtrlPadRight_ctx.lineTo(H,V);
+		CtrlPadRight_ctx.stroke();
+		CtrlPadRight_ctx.beginPath();
+		CtrlPadRight_ctx.arc(H,V,20,0,2*Math.PI);
+		CtrlPadRight_ctx.stroke();
+	
+		CtrlPadRight_ctx.beginPath();
+		CtrlPadRight_ctx.strokeStyle="red";
+		CtrlPadRight_ctx.arc(QC_H,QC_V,20,0,2*Math.PI);
+		CtrlPadRight_ctx.stroke();	
+	}
+	function CtrlPadRight_onTouch(e) {
+		e.preventDefault();
+		var touch=e.targetTouches[0];
+		var SetHoriz=touch.pageX-CtrlPadRightRect.left;
+		var SetVert=touch.pageY-CtrlPadRightRect.top;
+	
+		if (SetHoriz>CTRL_PAD_SIZE_ABS) {SetHoriz=CTRL_PAD_SIZE_ABS;} else if (SetHoriz<0) {SetHoriz=0;}
+		if (SetVert>CTRL_PAD_SIZE_ABS) {SetVert=CTRL_PAD_SIZE_ABS;} else if (SetVert<0) {SetVert=0;}
+	
+	
+		CurrentThrottle=Math.round(((CtrlPadRight_VCenter-SetVert)/(CTRL_PAD_SIZE_ABS/2))*MID_CTRLS_POS*SetRangeThrottle)+MID_CTRLS_POS;
+		CurrentYaw=Math.round(((SetHoriz-CtrlPadLeft_HCenter)/(CTRL_PAD_SIZE_ABS/2))*MID_CTRLS_POS*SetRangeYaw)+MID_CTRLS_POS;
+	
+		CtrlPadRight_UpdateCanvas();
+	}
+	function CtrlPadRight_onTouchEnd(e) {
+		e.preventDefault();
+	
+		CurrentThrottle=MID_CTRLS_POS;
+		CurrentYaw=MID_CTRLS_POS;
+	
+		CtrlPadRight_UpdateCanvas();
+	}
+	// ========================= TOUCH CONTROL EVENTS END ======================
+	
+	// ========================= APPLICATION EVENTS ===========================
+	function WS_SendRequest(msg) {if (WS!=null) {WS.send(msg);}}
+	
+	function UDPSockToggle() {
+		if (bConn.style.backgroundColor=="silver") {
+			bConn.style.backgroundColor="yellow";
+			
+			if (user_id!=false) {
+				WS=new WebSocket("ws://minlarc.com:9000/",user_id); //3a0035000647313331333037 is 96 bit uid
+				WS.binaryType='blob';
+				
+				WS.onopen=function() {
+					statusTXT.innerHTML+="Websocket..ON<br>";
+				}
+				
+				WS.onmessage=function(msg) {
+					if (msg.data instanceof Blob) { //If BLOB received then it's JPEG portion
+						JPEGbuf=new Blob([JPEGbuf,msg.data]);
+					} else if (msg.data.indexOf("2i_")===0) { //if text data then parse it
+						ParseMSG(msg.data);
+					}
+					if (bConn.style.backgroundColor=="yellow") {bConn.style.backgroundColor="lime";} //change color to lime once connected to receiver
+				}
+				
+				WS.onclose=function() {
+					bConn.style.backgroundColor="silver";
+					statusTXT.innerHTML+="Websocket..OFF<br>";
+					WS=null;
+				}
+			
+				WS.onerror=function() {statusTXT.innerHTML+="Websocket..ERROR<br>";}
+				
+			} else {
+				statusTXT.innerHTML+="UserID missed in URL<br>";
+				bConn.style.backgroundColor="silver";
+			}
+		} else {
+			WS.close();
+		}
+	}
+	
+	
+	function API_Request(opt,val) { //WS_SendRequest should be sent from this function only
+		switch (opt) {
+		
+			case 1: //send PRTY on channel 1,2,3 and 4
+				WS_SendRequest("2d_CH1234:"+SetPitch+","+SetRoll+","+SetThrottle+","+SetYaw+";");
+			break;
+			
+			case 2: //outgoing heartbeat
+				WS_SendRequest('2d_HB');
+			break;
+		
+			case 3: //1 = GPS, 2 = ATTI, 3 = FAILSAFE
+				switch (val) {
+					case 1: //GPS
+						if (confirm("Switch to GPS?")==true) {WS_SendRequest("2d_CH5VAL:835;");}
+					break;
+					
+					case 2: //ATTI
+						if (confirm("Switch to ATTI?")==true) {WS_SendRequest("2d_CH5VAL:500;");}
+					break;
+					
+					case 3: //FAILSAFE
+						if (confirm("Switch to FAILSAFE?")==true) {WS_SendRequest("2d_CH5VAL:330;");}
+					break;
+				}
+			break;
+		
+			case 4: //Run CH 1,2,3,4 calibration
+				if (confirm("Run CH1,2,3,4 calibration?")==true) {WS_SendRequest("2d_CH1234CALIBRATION");}
+			break;
+		
+			case 5: //Run/Stop motors
+				WS_SendRequest("2d_CH1234:0,0,0,0;");
+				setTimeout(function() {WS_SendRequest("2d_CH1234:500,500,500,500;");}, 700);
+				statusTXT.innerHTML+="MOTOR RUN/STOP REQUESTED<br>";
+			break;
+			
+			case 6: //Run compass calibration
+				if (confirm("Run COMPASS calibration?")==true) {
+					for (var i=0;i<14;i+=2) { //7 times
+						setTimeout(function() {WS_SendRequest("2d_CH5VAL:500;");}, i*200);
+						setTimeout(function() {WS_SendRequest("2d_CH5VAL:835;");}, (i+1)*200);
+					}
+				}
+			break;
+			
+			case 7: //Switch Camera on/off
+				switch (val) {
+					case 1: //Camera ON
+						WS_SendRequest("2d_CAMERAON");
+					break;
+					
+					case 2: //Camera OFF
+						WS_SendRequest("2d_CAMERAOFF");
+					break;
+				}
+			break;
+			
+			case 8: //Change camera resolution
+				WS_SendRequest("2d_JPGRES:"+val+";");
+				cameraZoom(zoom_value);
+			break;
+		
+			case 9: //Change camera jpeg quality
+				WS_SendRequest("2d_JPGQTY:"+val+";");
+			break;
+			
+		}
+	}
+	
+	function ParseMSG(data) {
+		switch (data) { //Parse data received from device
+		
+			case "2i_JPEGFRAME": //if jpeg frame end then render jpeg image on canvas
+				var url=URL.createObjectURL(JPEGbuf);
+				var img=new Image();
+				img.onload=function() {
+					CamCanvas.getContext("2d").drawImage(this,0,0,CamCanvas.width,CamCanvas.height);
+				};
+				img.onerror=function() {
+					console.log('wrong image');
+				};
+				img.src=url;
+				jpegFrN++; //Increment frame counter
+				jpegFrS+=JPEGbuf.size; //Add frame size for future calculation in timer above
+				JPEGbuf=new Blob();
+			break;
+		
+			case "2i_HB": //if incoming heartbeat has been received by this control panel
+				incomingHeartBeat=1;
+			break;
+		
+			default:
+				switch (data.split(":")[0]) {
+					
+					case "2i_CH1234": //Pitch,Roll,Throttle,Yaw set by iPad
+						QC_Pitch=parseInt(data.split(":")[1].split(",")[0]);
+						QC_Roll=parseInt(data.split(":")[1].split(",")[1]);
+						QC_Throttle=parseInt(data.split(":")[1].split(",")[2]);
+						QC_Yaw=parseInt(data.split(":")[1].split(",")[3]);
+			   
+						CtrlPadLeft_qcPitchTXT.innerHTML=QC_Pitch;
+						CtrlPadLeft_qcRollTXT.innerHTML=QC_Roll;
+						CtrlPadRight_qcThrottleTXT.innerHTML=QC_Throttle;
+						CtrlPadRight_qcYawTXT.innerHTML=QC_Yaw;
+						
+						CtrlPadLeft_UpdateCanvas();
+						CtrlPadRight_UpdateCanvas();
+					break;
+			
+					case "2i_LIPO3S": //LiPo 3S ADC voltage values
+						var S3=parseFloat(data.split(":")[1].split(",")[0]);
+					
+						document.getElementById("txtBattery").innerHTML=S3+" V";
+				
+						if ((S3<LiPO3S_yellow)&&(S3>=LiPO3S_red)) {document.getElementById("iBattery").style.backgroundColor="yellow";}
+						else if (S3<LiPO3S_red) {document.getElementById("iBattery").style.backgroundColor="red";}
+						else {document.getElementById("iBattery").style.backgroundColor="lime";}
+					break;
+					
+					case "2i_LIPO4S": //LiPo 4S ADC voltage values
+						var S4=parseFloat(data.split(":")[1].split(",")[0]);
+						/*
+						document.getElementById("txtBattery").innerHTML=S4+" V";
+						if ((S4<LiPO4S_yellow)&&(S4>=LiPO4S_red)) {document.getElementById("iBattery").style.backgroundColor="yellow";}
+						else if (S4<LiPO4S_red) {document.getElementById("iBattery").style.backgroundColor="red";}
+						else {document.getElementById("iBattery").style.backgroundColor="lime";}
+						*/
+					break;
+				
+					case "2i_NGPS": //Naza GPS data
+					
+						var dd_Lon=parseFloat(data.split(":")[1].split(",")[0]).toFixed(6); // Decimal degree Longitude
+						var dd_Lat=parseFloat(data.split(":")[1].split(",")[1]).toFixed(6); // Decimal degree Lattitude
+						var raw_AltSea=parseFloat(data.split(":")[1].split(",")[2]); //Altitude above sea level
+						var raw_Spd=parseFloat(data.split(":")[1].split(",")[3]);
+						var raw_Fix=parseInt(data.split(":")[1].split(",")[4]); //Raw fix status. NO_FIX = 0, FIX_2D = 2, FIX_3D = 3, FIX_DGPS = 4 
+						var raw_SVnum=parseInt(data.split(":")[1].split(",")[5]); //Number of SVs used for Navigation
+					
+						//Update GUI
+						switch (raw_Fix) {
+							case 0: document.getElementById("iGpsFix").style.backgroundColor="red"; break;
+							case 2: document.getElementById("iGpsFix").style.backgroundColor="yellow"; break;
+							case 3: document.getElementById("iGpsFix").style.backgroundColor="lime"; break;
+							case 4: document.getElementById("iGpsFix").style.backgroundColor="green"; break;
+						}
+						document.getElementById("txtGpsSvNum").innerHTML=raw_SVnum;
+						if ((GPS_AltCompensation==(-100))&&(raw_Fix>=3)) {
+							GPS_AltCompensation=raw_AltSea;
+						} else {
+							document.getElementById("txtGpsAlt").innerHTML=(raw_AltSea-GPS_AltCompensation).toFixed(1)+" m";
+						} 
+						document.getElementById("txtGpsSpeed").innerHTML=((raw_Spd*3.6).toFixed(1))+" km/h"; //Speed in km/h
+						
+						if (raw_Fix!=0) {updatePlacemark(dd_Lat,dd_Lon);}
+					
+					break;
+					
+					case "2i_GPS": //UBLOX GPS data
+						switch (data.split(":")[1].split(",")[0]) {
+							case "$GPGGA": //if GGA data
+						
+								var raw_Lat=parseFloat(data.split(":")[1].split(",")[2]); //Raw lattitude
+								var raw_Lon=parseFloat(data.split(":")[1].split(",")[4]); //Raw longitude
+								var raw_Fix=parseInt(data.split(":")[1].split(",")[6]); //Raw Status. //0=Invalid, 1=2D/3D, 2=DFPS, 6=Dead Reckoning
+								var raw_SVnum=parseInt(data.split(":")[1].split(",")[7]); //Number of SVs used for Navigation
+								var raw_AltSea=parseFloat(data.split(":")[1].split(",")[9]); //Altitude above sea level
+								//var raw_AltGeo=data.split(":")[1].split(",")[11]; //Geoid separation
+						
+								var dd_Lat=(Math.floor(raw_Lat/100)+(((raw_Lat/100)-Math.floor(raw_Lat/100))*100/60)).toFixed(6);
+								var dd_Lon=(Math.floor(raw_Lon/100)+(((raw_Lon/100)-Math.floor(raw_Lon/100))*100/60)).toFixed(6);
+						
+								//Update GUI
+								switch (raw_Fix) {
+									case 0: document.getElementById("iGpsFix").style.backgroundColor="red"; break;
+									case 1: case 2: document.getElementById("iGpsFix").style.backgroundColor="lime"; break;
+								}
+								document.getElementById("txtGpsSvNum").innerHTML=raw_SVnum;
+								if ((GPS_AltCompensation==(-100))&&(raw_Fix>=1)) {
+									GPS_AltCompensation=raw_AltSea;
+								} else {
+									document.getElementById("txtGpsAlt").innerHTML=(raw_AltSea-GPS_AltCompensation).toFixed(1)+" m";
+								} 
+						
+								if ((!isNaN(raw_Lat))&&(!isNaN(raw_Lon))) {updatePlacemark(dd_Lat,dd_Lon);}
+						
+							break;
+						
+							case "$GPVTG": //if VTG data
+								var raw_Spd=parseFloat(data.split(":")[1].split(",")[7]); //Raw speed over ground in km/h
+								document.getElementById("txtGpsSpeed").innerHTML=(raw_Spd).toFixed(1)+" km/h"; //Speed in km/h
+							break;
+						}
+					break;
+				
+					default:
+						statusTXT.innerHTML+=data+"<br>";
+					break;
+				}
+			break;
+		}
+	}
+	
+	
+	// ========================= APPLICATION EVENTS END =======================
+	
+	
+	//=================== PRIVATE AUX FUNCTIONS ============================
+	function getQueryVariable(variable) {
+		var query=window.location.search.substring(1);
+		var vars=query.split("&");
+		for(var i=0;i<vars.length;i++) {
+			var pair=vars[i].split("=");
+			if (pair[0]==variable) {return pair[1];}
+		}
+		return(false);
+	}
+	//=================== PRIVATE AUX FUNCTIONS END ========================
+	
+</script>

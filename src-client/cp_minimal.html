@@ -1,0 +1,189 @@
+
+
+<!--	
+		=============================================================
+		Author: Gennady Shmakov <gshmakov@gmail.com>
+		Copyright (c) 2016 Minla RC. All rights reserved.
+		
+		This file is a part of Minla RC LTE FPV receiver project.
+		=============================================================
+-->
+
+
+<!DOCTYPE html>
+
+<html>
+	<head></head>
+	
+	<body style="background-color:#ededed">
+		<canvas id="CameraCanvas" style="z-index:0; position:absolute; width:320px; height:240px; top:0px; left:150px; background-color:grey;">No HTML5</canvas>
+		<button type="button" id="bConn" style="position:absolute; top:50px; left:0px; background-color:silver;z-index:1;" onclick="UDPSockToggle()">ON/OFF</button>
+		<div id="jpegTXT" style="top:0px; left:50px; width:100px; height:10px; position:absolute; z-index:1; font-family:sans-serif; font-size:10px; text-align:left; color:red;"></div>
+		<div id="statusTXT" style="top:15px; height:40px; left:50px; width:180px; position:absolute; z-index:1; font-family:sans-serif; font-size:10px; text-align:left; color:green;"></div>
+		
+		<input type="range" id="ch1" style="position:absolute; top:270px; left:10px; width:250px;" value="500" min="0" max="1000" step="25" oninput="fCh1(this.value)">
+		<div id="ch1txt" style="position:absolute; top:270px; left:280px; width:50px;">500</div>
+		
+		<input type="range" id="ch2" style="position:absolute; top:300px; left:10px; width:250px;" value="500" min="0" max="1000" step="25" oninput="fCh2(this.value)">
+		<div id="ch2txt" style="position:absolute; top:300px; left:280px; width:50px;">500</div>
+		
+	</body>
+</html>
+
+
+<script>
+	var ch1val=500, ch2val=500;
+	
+	function fCh1(val) {
+		ch1val=val;
+		document.getElementById("ch1txt").innerHTML=ch1val;
+		WS_SendRequest("2d_CH1234:"+ch1val+","+ch2val+",0,0;");
+	}
+	
+	function fCh2(val) {
+		ch2val=val;
+		document.getElementById("ch2txt").innerHTML=ch2val;
+		WS_SendRequest("2d_CH1234:"+ch1val+","+ch2val+",0,0;");
+	}
+</script>
+
+
+
+<script>
+	//====== APPLICATION VARIABLES ======
+	var JPEGbuf=new Blob();
+	var WS=null;
+	var user_id=getQueryVariable("id");
+	var jpegFrN=0, jpegFrS=0; //Number and size of jpeg frames
+	var incomingHeartBeat=0;
+	//====== APPLICATION VARIABLES END ======
+	
+	//====== INTERFACE INIT ======
+	//Camera canvas
+	var CamCanvas=document.getElementById("CameraCanvas");
+	
+	//Buttons/TextFields
+	var statusTXT=document.getElementById("statusTXT");
+	var bConn=document.getElementById("bConn");
+	var jpegTXT=document.getElementById("jpegTXT");
+	//====== INTERFACE INIT END ======
+	
+	
+	//====== TIMERS ======
+	setInterval(function() {
+			WS_SendRequest('2d_HB'); //send heartbeat signal to minla device
+	},1000); //Every 1 second
+	
+	setInterval(function() { //Clear statusTXT field line by line
+		statusTXT.innerHTML=statusTXT.innerHTML.slice(statusTXT.innerHTML.indexOf("<br>")+4);
+	},6000); //Every 6 seconds
+	
+	setInterval(function() { //FPS calculation and mean frame size
+		if (jpegFrN!=0) {
+			jpegTXT.innerHTML="fps/size:"+jpegFrN+"/"+Math.round(jpegFrS/jpegFrN);
+		} else {
+			jpegTXT.innerHTML="Camera..OFF";
+		}
+		
+		jpegFrN=0;
+		jpegFrS=0;
+	},1000); //Every 1 second
+	
+	setInterval(function() { //check if heartbeat has been received from MINLA receiver board
+		if ((bConn.style.backgroundColor=="lime")&&(incomingHeartBeat==0)) {
+			bConn.style.backgroundColor="yellow";
+		} else {
+			incomingHeartBeat=0;
+		}
+	},5000); //Every 5 second
+	// ====== TIMERS END ======
+
+	
+	// ====== APPLICATION EVENTS ======
+	function WS_SendRequest(msg) {if (WS!=null) {WS.send(msg);}}
+	
+	function UDPSockToggle() {
+		if (bConn.style.backgroundColor=="silver") {
+			bConn.style.backgroundColor="yellow";
+			
+			if (user_id!=false) {
+				WS=new WebSocket("ws://minlarc.com:9000/",user_id); //3a0035000647313331333037 is 96 bit uid
+				WS.binaryType='blob';
+				
+				WS.onopen=function() {
+					statusTXT.innerHTML+="Websocket..ON<br>";
+				}
+				
+				WS.onmessage=function(msg) {
+					if (msg.data instanceof Blob) { //If BLOB received then it's JPEG portion
+						JPEGbuf=new Blob([JPEGbuf,msg.data]);
+					} else if (msg.data.indexOf("2i_")===0) { //if text data then parse it
+						ParseMSG(msg.data);
+					}
+					if (bConn.style.backgroundColor=="yellow") {bConn.style.backgroundColor="lime";} //change color to lime once connected to receiver
+				}
+				
+				WS.onclose=function() {
+					bConn.style.backgroundColor="silver";
+					statusTXT.innerHTML+="Websocket..OFF<br>";
+					WS=null;
+				}
+			
+				WS.onerror=function() {statusTXT.innerHTML+="Websocket..ERROR<br>";}
+				
+			} else {
+				statusTXT.innerHTML+="UserID missed in URL<br>";
+				bConn.style.backgroundColor="silver";
+			}
+		} else {
+			WS.close();
+		}
+	}
+	
+	function ParseMSG(data) {
+		switch (data) { //Parse data received from device
+		
+			case "2i_JPEGFRAME": //if jpeg frame end then render jpeg image on canvas
+				var url=URL.createObjectURL(JPEGbuf);
+				var img=new Image();
+				img.onload=function() {
+					CamCanvas.getContext("2d").drawImage(this,0,0,CamCanvas.width,CamCanvas.height);
+				};
+				img.onerror=function() {
+					console.log('wrong image');
+				};
+				img.src=url;
+				jpegFrN++; //Increment frame counter
+				jpegFrS+=JPEGbuf.size; //Add frame size for future calculation in timer above
+				JPEGbuf=new Blob();
+			break;
+		
+			case "2i_HB": //if incoming heartbeat has been received by this control panel
+				incomingHeartBeat=1;
+			break;
+		
+			default:
+				switch (data.split(":")[0]) {
+					default:
+						statusTXT.innerHTML+=data+"<br>";
+					break;
+				}
+			break;
+		}
+	}
+	// ====== APPLICATION EVENTS END ======
+	
+	
+	//====== PRIVATE AUX FUNCTIONS ======
+	function getQueryVariable(variable) {
+		var query=window.location.search.substring(1);
+		var vars=query.split("&");
+		for(var i=0;i<vars.length;i++) {
+			var pair=vars[i].split("=");
+			if (pair[0]==variable) {return pair[1];}
+		}
+		return(false);
+	}
+	//====== PRIVATE AUX FUNCTIONS END ======
+	
+</script>
