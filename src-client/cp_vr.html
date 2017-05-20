@@ -1,0 +1,249 @@
+
+<!-- 
+	Contol panel for Minla receiver board v0.071 adapted for VR glasses like google cardboard and such
+	Works together with server_cp_v0.07.js server script		
+ -->
+
+<!DOCTYPE html>
+
+<html>
+	<head>
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="mobile-web-app-capable" content="yes">
+		<meta name="viewport" content="width=device-width, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+		<script>document.ontouchmove=function(e){e.preventDefault();}</script>
+		
+		<style>.sPadTXT{position:absolute; width:20px; height:10px; z-index:1; font-family:sans-serif; font-size:10px; text-align:left;}</style>
+		<style>.sMenuTXT{position:absolute; font-family:sans-serif; font-size:10px; text-align:center; color:green;}</style>
+		<style>.sTelemetryTXT{position:absolute; width:70px; height:10px; z-index:11; font-family:sans-serif; font-size:10px; font-weight:bold; text-align:left; color:red;}</style>
+	</head>
+	
+	<body style="background-color:#424242">
+
+		<script>
+			var WINDOW_WIDTH=window.innerWidth;var WINDOW_HEIGHT=window.innerHeight;
+		</script>
+	
+		<canvas id="CameraCanvas" style="z-index:1; position:absolute; top:0px; background-color:grey;">No HTML5</canvas> <!-- #7ab995 -->
+		<canvas id="CameraCanvas1" style="z-index:0; position:absolute; top:0px; background-color:white;">No HTML5</canvas> <!-- #7ab995 -->
+		
+	</body>
+</html> 
+
+<script>
+	
+	//============= APPLICATION VARIABLES =================
+	var JPEGbuf=new Blob();
+	var WS=null;
+	var user_id=getQueryVariable("id");
+	var incomingHeartBeat=0;
+	//============= APPLICATION VARIABLES END =============
+	
+	//============= INTERFACE INIT ==================
+	//Camera canvas
+	var CamCanvas=document.getElementById("CameraCanvas");
+	CamCanvas.width=Math.round(1*250);
+	//CamCanvas.height=Math.round(CamCanvas.width*18/22);
+	CamCanvas.height=Math.round(CamCanvas.width*3/4);
+	CamCanvas.style.left=Math.round(((WINDOW_WIDTH/2)-CamCanvas.width)/2).toString()+"px";
+	CamCanvas.style.top=Math.round((WINDOW_HEIGHT-CamCanvas.height)/2).toString()+"px";
+	CamCanvas.getContext("2d").translate(CamCanvas.width,CamCanvas.height);
+	CamCanvas.getContext("2d").rotate(180*Math.PI/180);
+	CamCanvas.addEventListener('touchstart',Cam_onTouch,false);
+	
+	
+	var CamCanvas1=document.getElementById("CameraCanvas1");
+	CamCanvas1.width=Math.round(1*250);
+	//CamCanvas1.height=Math.round(CamCanvas1.width*18/22);
+	CamCanvas1.height=Math.round(CamCanvas1.width*3/4);
+	CamCanvas1.style.left=Math.round(((WINDOW_WIDTH*3/2)-CamCanvas1.width)/2).toString()+"px";
+	CamCanvas1.style.top=Math.round((WINDOW_HEIGHT-CamCanvas1.height)/2).toString()+"px";
+	CamCanvas1.getContext("2d").translate(CamCanvas1.width,CamCanvas1.height);
+	CamCanvas1.getContext("2d").rotate(180*Math.PI/180);
+	CamCanvas1.addEventListener('touchstart',Cam1_onTouch,false);
+	//==
+	
+	
+	
+	//============= INTERFACE INIT END ==============
+	
+	
+	//===================== TIMERS ========================
+	setInterval(function() { //Delay in ms how often [pitch,roll,throttle,yaw] control signals will be sent to device
+		API_Request(2,0); //send heartbeat signal to minla device
+	},50); //Every 0.25 seconds
+	
+	setInterval(function() { //check if heartbeat has been received from MINLA receiver board
+		incomingHeartBeat=0;
+	},5000); //Every 5 second
+	//===================== TIMERS END ====================
+	
+	
+	// ========================= TOUCH CONTROL EVENTS ==========================
+	function Cam_onTouch(e) {
+		e.preventDefault();
+		UDPSockToggle();
+	}
+	
+	function Cam1_onTouch(e) {
+		e.preventDefault();
+		API_Request(9,5);
+		//API_Request(8,160)
+	}
+	
+	
+	
+	
+	//============================ CAMERA CANVAS ============================
+	
+	// ========================= APPLICATION EVENTS ===========================
+	function WS_SendRequest(msg) {if (WS!=null) {WS.send(msg);}}
+	
+	var socketIsOn=0;
+	function UDPSockToggle() {
+		if (socketIsOn==0) {
+			socketIsOn=1;
+			document.body.style.backgroundColor="#EEEEEE";
+			
+			if (user_id!=false) {
+				WS=new WebSocket("ws://minlarc.com:9000/",user_id); //3a0035000647313331333037 is 96 bit uid
+				WS.binaryType='blob';
+				
+				WS.onopen=function() {
+					
+				}
+				
+				WS.onmessage=function(msg) {
+					if (msg.data instanceof Blob) { //If BLOB received then it's JPEG portion
+						JPEGbuf=new Blob([JPEGbuf,msg.data]);
+					} else if (msg.data.indexOf("2i_")===0) { //if text data then parse it
+						ParseMSG(msg.data);
+					}
+				}
+				
+				WS.onclose=function() {
+					socketIsOn=0;
+					WS=null;
+					document.body.style.backgroundColor="#424242";
+				}
+			
+				WS.onerror=function() { }
+				
+			} else {
+				
+			}
+		} else {
+			WS.close();
+		}
+	}
+	
+	
+	function API_Request(opt,val) { //WS_SendRequest should be sent from this function only
+		switch (opt) {
+		
+			case 1: //send PRTY on channel 1,2,3 and 4
+				WS_SendRequest("2d_CH1234:"+SetPitch+","+SetRoll+","+SetThrottle+","+SetYaw+";");
+			break;
+			
+			case 2: //outgoing heartbeat
+				WS_SendRequest('2d_HB');
+			break;
+		
+			case 3: //1 = GPS, 2 = ATTI, 3 = FAILSAFE
+				switch (val) {
+					case 1: //GPS
+						if (confirm("Switch to GPS?")==true) {WS_SendRequest("2d_CH5VAL:835;");}
+					break;
+					
+					case 2: //ATTI
+						if (confirm("Switch to ATTI?")==true) {WS_SendRequest("2d_CH5VAL:500;");}
+					break;
+					
+					case 3: //FAILSAFE
+						if (confirm("Switch to FAILSAFE?")==true) {WS_SendRequest("2d_CH5VAL:330;");}
+					break;
+				}
+			break;
+		
+			case 4: //Run CH 1,2,3,4 calibration
+				if (confirm("Run CH1,2,3,4 calibration?")==true) {WS_SendRequest("2d_CH1234CALIBRATION");}
+			break;
+		
+			case 5: //Run/Stop motors
+				WS_SendRequest("2d_CH1234:0,0,0,0;");
+				setTimeout(function() {WS_SendRequest("2d_CH1234:500,500,500,500;");}, 700);
+			break;
+			
+			case 6: //Run compass calibration
+				if (confirm("Run COMPASS calibration?")==true) {
+					for (var i=0;i<14;i+=2) { //7 times
+						setTimeout(function() {WS_SendRequest("2d_CH5VAL:500;");}, i*200);
+						setTimeout(function() {WS_SendRequest("2d_CH5VAL:835;");}, (i+1)*200);
+					}
+				}
+			break;
+			
+			case 7: //Switch Camera on/off
+				switch (val) {
+					case 1: //Camera ON
+						WS_SendRequest("2d_CAMERAON");
+					break;
+					
+					case 2: //Camera OFF
+						WS_SendRequest("2d_CAMERAOFF");
+					break;
+				}
+			break;
+			
+			case 8: //Change camera resolution
+				WS_SendRequest("2d_JPGRES:"+val+";");
+				cameraZoom(zoom_value);
+			break;
+		
+			case 9: //Change camera jpeg quality
+				WS_SendRequest("2d_JPGQTY:"+val+";");
+			break;
+			
+		}
+	}
+	
+	function ParseMSG(data) {
+		switch (data) { //Parse data received from device
+		
+			case "2i_JPEGFRAME": //if jpeg frame end then render jpeg image on canvas
+				var url=URL.createObjectURL(JPEGbuf);
+				var img=new Image();
+				img.onload=function() {
+					CamCanvas.getContext("2d").drawImage(this,0,0,CamCanvas.width,CamCanvas.height);
+					CamCanvas1.getContext("2d").drawImage(this,0,0,CamCanvas1.width,CamCanvas1.height);
+				};
+				img.onerror=function() {
+					console.log('wrong image');
+				};
+				img.src=url;
+				JPEGbuf=new Blob();
+			break;
+		
+			case "2i_HB": //if incoming heartbeat has been received by this control panel
+				incomingHeartBeat=1;
+			break;
+		}
+	}
+	
+	
+	// ========================= APPLICATION EVENTS END =======================
+	
+	
+	//=================== PRIVATE AUX FUNCTIONS ============================
+	function getQueryVariable(variable) {
+		var query=window.location.search.substring(1);
+		var vars=query.split("&");
+		for(var i=0;i<vars.length;i++) {
+			var pair=vars[i].split("=");
+			if (pair[0]==variable) {return pair[1];}
+		}
+		return(false);
+	}
+	//=================== PRIVATE AUX FUNCTIONS END ========================
+	
+</script>

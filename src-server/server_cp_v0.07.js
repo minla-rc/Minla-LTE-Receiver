@@ -1,23 +1,11 @@
 
-/*	
-		=============================================================
-		Author: Gennady Shmakov <gshmakov@gmail.com>
-		Copyright (c) 2016 Minla RC. All rights reserved.
-		
-		This file is a part of Minla RC LTE FPV receiver project.
-		=============================================================
-*/
-
-
-/*	
-		Server uses single UDP socket for both camera and data (binary for camera and text for data)
+/*	Server uses single UDP socket for both camera and data (binary for camera and text for data)
 		Works with cp_v0.07.html file
 		Possible issues - all processing is done on client side -> may be slow
 		
 		UPDATE: this modification supposed to work with single websocket and single udp socket for multiple clients
 		Uinque id of the STM32F4 device is located at 0x1FFF7A10 and is sent upon connecting both over websocket and over udp
 */
-
 
 // =========== API CONST used in this server script ==================
 var CONST_2I_REG="2i_reg:"; //Registration/heartbeat message received over UDP from anonymous receiver board
@@ -26,8 +14,8 @@ var CONST_2I_PREAMBLE="2i_";
 // =========== API CONST used in this server script END ==============
 
 var ServerIP="0.0.0.0";
-var WebSocketServerPort=9000; 	//WebSocket port
-var UDPSocketPort=3000;					//UDP socket port
+var WebSocketServerPort=9000; 	//9000 = production
+var UDPSocketPort=3000;					//3000 = production
 
 var dgram=require('dgram');
 var WebSocketServer=require('ws').Server;
